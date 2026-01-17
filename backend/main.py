@@ -32,12 +32,8 @@ async def predict_load(request: ForecastRequest):
         # Convert date string to datetime
         target_date = datetime.strptime(request.target_date, "%Y-%m-%d")
         
-        # Check if model is loaded
-        if not model_service.is_loaded():
-            raise HTTPException(status_code=503, detail="Models not loaded")
-            
         # Run prediction
-        forecast_df = model_service.predict_future_date(target_date, request.horizon_hours)
+        forecast_df = model_service.predict(target_date, request.horizon_hours, request.model_type)
         
         # Format response
         timestamps = forecast_df.index.strftime("%Y-%m-%d %H:%M").tolist()

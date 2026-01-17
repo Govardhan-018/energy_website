@@ -10,11 +10,11 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const handlePredict = async (date, horizon) => {
+  const handlePredict = async (date, horizon, modelType) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await predictLoad(date, horizon);
+      const result = await predictLoad(date, horizon, modelType);
       setData(result);
     } catch (err) {
       setError("Failed to fetch forecast. ensure backend is running.");

@@ -2,11 +2,12 @@ import axios from 'axios';
 
 const API_URL = 'http://localhost:8000';
 
-export const predictLoad = async (targetDate, horizonHours = 24) => {
+export const predictLoad = async (targetDate, horizonHours = 24, modelType = 'lightgbm') => {
     try {
         const response = await axios.post(`${API_URL}/predict`, {
             target_date: targetDate,
-            horizon_hours: horizonHours
+            horizon_hours: horizonHours,
+            model_type: modelType
         });
         return response.data;
     } catch (error) {

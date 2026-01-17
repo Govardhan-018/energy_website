@@ -3,11 +3,13 @@ import joblib
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
-from datetime import timedelta
+from prophet import Prophet
+from datetime import datetime, timedelta
 
 class ModelService:
     def __init__(self):
         self.lgb_model = None
+        self.delhi_model = None
         self.metadata = None
         self.base_data = None
         self.model_dir = "backend/models"
@@ -15,33 +17,54 @@ class ModelService:
 
     def load_models(self):
         print("Loading models...")
+        # Load LightGBM
         try:
-            self.lgb_model = lgb.Booster(model_file=os.path.join(self.model_dir, 'lgb_model.txt'))
-            self.metadata = joblib.load(os.path.join(self.model_dir, 'metadata.joblib'))
-            
-            # Load basic history for lag features
-            if os.path.exists(self.data_path):
+            lgb_path = os.path.join(self.model_dir, 'lgb_model.txt')
+            if os.path.exists(lgb_path):
+                self.lgb_model = lgb.Booster(model_file=lgb_path)
+                self.metadata = joblib.load(os.path.join(self.model_dir, 'metadata.joblib'))
+                print("LightGBM model loaded.")
+            else:
+                print("LightGBM model file not found.")
+        except Exception as e:
+            print(f"Failed to load LightGBM model: {e}")
+
+        # Load Delhi Prophet Model
+        try:
+            delhi_path = os.path.join(self.model_dir, 'delhi_model.joblib')
+            if os.path.exists(delhi_path):
+                self.delhi_model = joblib.load(delhi_path)
+                print("Delhi Prophet model loaded.")
+            else:
+                print("Delhi model file not found.")
+        except Exception as e:
+            print(f"Failed to load Delhi model: {e}")
+
+        # Load basic history for LightGBM lag features
+        if os.path.exists(self.data_path):
+            try:
                 self.base_data = pd.read_csv(self.data_path, header=None, names=['datetime', 'load'])
                 self.base_data['datetime'] = pd.to_datetime(self.base_data['datetime'], format='%d/%m/%Y %H:%M')
                 self.base_data = self.base_data.set_index('datetime')
-            else:
-                # Dummy data fallback for demo if file still missing
-                dates = pd.date_range(start='2025-01-17', periods=5000, freq='5min')
-                # Synthetic sine wave + noise
-                t = np.linspace(0, 100, 5000)
-                load = 4000 + 1000 * np.sin(t) + 500 * np.random.normal(0, 0.5, 5000)
-                self.base_data = pd.DataFrame({'load': load}, index=dates)
-                
-            print("Models loaded successfully.")
-        except Exception as e:
-            print(f"Failed to load models: {e}")
-            self.lgb_model = None
+            except Exception as e:
+                print(f"Error loading base data: {e}")
+        
+        if self.base_data is None:
+            # Dummy data fallback
+            dates = pd.date_range(start='2025-01-17', periods=5000, freq='5min')
+            t = np.linspace(0, 100, 5000)
+            load = 4000 + 1000 * np.sin(t) + 500 * np.random.normal(0, 0.5, 5000)
+            self.base_data = pd.DataFrame({'load': load}, index=dates)
 
-    def is_loaded(self):
+        print("Models loaded mechanism completed.")
+
+    def is_loaded(self, model_type="lightgbm"):
+        if model_type == "delhi":
+            return self.delhi_model is not None
         return self.lgb_model is not None
 
     def _create_features(self, df):
-        # Replicate training logic
+        # Replicate training logic for LightGBM
         df = df.copy()
         df['hour'] = df.index.hour
         df['minute'] = df.index.minute
@@ -56,7 +79,35 @@ class ModelService:
         df['day_cos'] = np.cos(2 * np.pi * df['dayofweek'] / 7)
         return df
 
-    def predict_future_date(self, target_date, horizon_hours=24):
+    def predict(self, target_date, horizon_hours=24, model_type="lightgbm"):
+        if model_type == "delhi" and self.delhi_model:
+            return self._predict_prophet(target_date, horizon_hours)
+        elif self.lgb_model:
+            return self._predict_lightgbm(target_date, horizon_hours)
+        else:
+            raise ValueError("Requested model not loaded.")
+
+    def _predict_prophet(self, target_date, horizon_hours):
+        # Prophet handles time features internally
+        future_dates = pd.date_range(
+            start=target_date, 
+            periods=horizon_hours * 12, # 5 min intervals = 12 per hour
+            freq='5min' # Changed '5T' to '5min' for consistency
+        )
+        future_df = pd.DataFrame({'ds': future_dates})
+        
+        forecast = self.delhi_model.predict(future_df)
+        
+        # Prophet returns 'yhat'
+        result = pd.DataFrame({
+            'predicted_load': forecast['yhat'].values
+        }, index=future_dates)
+        
+        # Ensure no negative values
+        result['predicted_load'] = result['predicted_load'].clip(lower=0)
+        return result
+
+    def _predict_lightgbm(self, target_date, horizon_hours):
         timestamps = []
         current = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
         end = current + timedelta(hours=horizon_hours)
@@ -65,17 +116,7 @@ class ModelService:
             timestamps.append(current)
             current += timedelta(minutes=5)
             
-        # Simplified prediction:
-        # In a real scenario, we recursively predict.
-        # But to be robust and fast for this demo without full history context:
-        # We will generate features for the requested timestamps and predict using them.
-        # This ignores the 'lag' values from previous *predicted* steps (autoregressive loop),
-        # but prevents explosion and error if history is missing.
-        # We'll fill lags with available history mean/random to make the model output *something*.
-        
         preds = []
-        
-        # Mock history mean
         mean_load = self.base_data['load'].mean() if self.base_data is not None else 4000
         
         for ts in timestamps:
@@ -85,10 +126,9 @@ class ModelService:
             # Fill lags with mean (simplified)
             lags = [1, 2, 3, 6, 12, 24, 288]
             for lag in lags:
-                row[f'lag_{lag}'] = mean_load + np.random.normal(0, 100) # Variance
+                row[f'lag_{lag}'] = mean_load + np.random.normal(0, 100)
                 
             features = self.metadata['feature_cols']
-            # Ensure all columns exist
             for col in features:
                 if col not in row.columns:
                     row[col] = 0

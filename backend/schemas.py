@@ -4,6 +4,7 @@ from typing import List
 class ForecastRequest(BaseModel):
     target_date: str  # YYYY-MM-DD
     horizon_hours: int = 24  # Default to 24 hours
+    model_type: str = "lightgbm"  # "lightgbm" or "delhi"
 
 class ForecastResponse(BaseModel):
     timestamps: List[str]
