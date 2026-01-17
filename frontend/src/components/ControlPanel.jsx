@@ -2,68 +2,64 @@ import { useState } from 'react';
 import { Calendar, Clock, ArrowRight, Activity } from 'lucide-react';
 
 const ControlPanel = ({ onPredict, loading }) => {
-    const [date, setDate] = useState('2025-01-20');
-    const [horizon, setHorizon] = useState(24);
-    const [modelType, setModelType] = useState('lightgbm');
+    // Default to a week in 2024 (within training data range)
+    const [startDate, setStartDate] = useState(new Date('2024-01-15').toISOString().split('T')[0]);
+    const [endDate, setEndDate] = useState(new Date('2024-01-21').toISOString().split('T')[0]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        onPredict(date, horizon, modelType);
+        onPredict(startDate, endDate);
     };
 
     return (
-        <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6 shadow-xl">
-            <h3 className="text-xl font-semibold mb-6 text-slate-300">Configuration</h3>
+        <div className="bg-[#0B0F1A] border border-[#00FFF6]/30 p-6 shadow-[0_0_20px_rgba(0,255,246,0.05)] relative group">
+            {/* Corner Accents */}
+            <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-[#00FFF6]" />
+            <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-[#00FFF6]" />
+            <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-[#00FFF6]" />
+            <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#00FFF6]" />
+
+            <h3 className="text-lg font-mono font-semibold mb-6 text-[#00FFF6] tracking-widest uppercase border-b border-[#00FFF6]/20 pb-2">
+                // SYSTEM_CONFIG
+            </h3>
+
             <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-400 flex items-center gap-2">
-                        <Calendar className="w-4 h-4" /> Target Date
+                    <label className="text-xs font-mono text-[#00FFF6]/70 flex items-center gap-2 uppercase tracking-wider">
+                        <Calendar className="w-3 h-3" /> Start_Date
                     </label>
                     <input
                         type="date"
-                        value={date}
-                        onChange={(e) => setDate(e.target.value)}
-                        className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-3 text-slate-200 focus:ring-2 focus:ring-cyan-500 outline-none transition-all"
+                        value={startDate}
+                        min="2023-01-01"
+                        max="2024-12-30"
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full bg-[#131b2d] border border-[#00FFF6]/50 px-4 py-3 text-[#EAEAEA] font-mono focus:border-[#00FFF6] focus:shadow-[0_0_10px_rgba(0,255,246,0.2)] outline-none transition-all placeholder-[#8A8F98]"
                     />
                 </div>
 
                 <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-400 flex items-center gap-2">
-                        <Clock className="w-4 h-4" /> Horizon (Hours)
+                    <label className="text-xs font-mono text-[#FF2A6D]/70 flex items-center gap-2 uppercase tracking-wider">
+                        <Clock className="w-3 h-3" /> End_Date
                     </label>
-                    <select
-                        value={horizon}
-                        onChange={(e) => setHorizon(Number(e.target.value))}
-                        className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-3 text-slate-200 focus:ring-2 focus:ring-cyan-500 outline-none transition-all"
-                    >
-                        {[12, 24, 48, 72].map(h => (
-                            <option key={h} value={h}>{h} Hours</option>
-                        ))}
-                    </select>
-                </div>
-
-                <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-400 flex items-center gap-2">
-                        <Activity className="w-4 h-4" /> Model
-                    </label>
-                    <select
-                        value={modelType}
-                        onChange={(e) => setModelType(e.target.value)}
-                        className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-3 text-slate-200 focus:ring-2 focus:ring-cyan-500 outline-none transition-all"
-                    >
-                        <option value="lightgbm">LightGBM Hybrid</option>
-                        <option value="delhi">Delhi Hybrid (Prophet)</option>
-                    </select>
+                    <input
+                        type="date"
+                        value={endDate}
+                        min="2023-01-02"
+                        max="2024-12-31"
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="w-full bg-[#131b2d] border border-[#FF2A6D]/50 px-4 py-3 text-[#EAEAEA] font-mono focus:border-[#FF2A6D] focus:shadow-[0_0_10px_rgba(255,42,109,0.2)] outline-none transition-all"
+                    />
                 </div>
 
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold py-3 px-6 rounded-lg shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
+                    className="w-full bg-[#00FFF6]/10 hover:bg-[#00FFF6]/20 text-[#00FFF6] border border-[#00FFF6]/50 hover:border-[#00FFF6] hover:shadow-[0_0_15px_rgba(0,255,246,0.3)] font-mono font-bold py-3 px-6 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all uppercase tracking-widest mt-8"
                 >
-                    {loading ? 'Processing...' : (
+                    {loading ? 'PROCESSING>>' : (
                         <>
-                            Generate Forecast <ArrowRight className="w-4 h-4" />
+                            INIT_FORECAST <ArrowRight className="w-4 h-4" />
                         </>
                     )}
                 </button>

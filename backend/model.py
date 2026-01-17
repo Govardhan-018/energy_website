@@ -79,63 +79,62 @@ class ModelService:
         df['day_cos'] = np.cos(2 * np.pi * df['dayofweek'] / 7)
         return df
 
-    def predict(self, target_date, horizon_hours=24, model_type="lightgbm"):
-        if model_type == "delhi" and self.delhi_model:
-            return self._predict_prophet(target_date, horizon_hours)
-        elif self.lgb_model:
-            return self._predict_lightgbm(target_date, horizon_hours)
-        else:
-            raise ValueError("Requested model not loaded.")
-
-    def _predict_prophet(self, target_date, horizon_hours):
-        # Prophet handles time features internally
-        future_dates = pd.date_range(
-            start=target_date, 
-            periods=horizon_hours * 12, # 5 min intervals = 12 per hour
-            freq='5min' # Changed '5T' to '5min' for consistency
-        )
-        future_df = pd.DataFrame({'ds': future_dates})
+    def predict(self, start_date, end_date):
+        # Calculate horizon hours based on date range
+        diff = end_date - start_date
+        # Add 1 day to include end date fully (up to 23:55)
+        total_hours = (diff.days + 1) * 24 
         
-        forecast = self.delhi_model.predict(future_df)
-        
-        # Prophet returns 'yhat'
-        result = pd.DataFrame({
-            'predicted_load': forecast['yhat'].values
-        }, index=future_dates)
-        
-        # Ensure no negative values
-        result['predicted_load'] = result['predicted_load'].clip(lower=0)
-        return result
-
-    def _predict_lightgbm(self, target_date, horizon_hours):
+        # Generate timestamps
         timestamps = []
-        current = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = current + timedelta(hours=horizon_hours)
+        current = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        # End is the end of the end_date
+        end_timestamp = end_date.replace(hour=23, minute=59, second=59)
         
-        while current < end:
+        while current <= end_timestamp:
             timestamps.append(current)
             current += timedelta(minutes=5)
+
+        # Get Prophet Predictions
+        prophet_loads = []
+        if self.delhi_model:
+            future_df = pd.DataFrame({'ds': timestamps})
+            forecast = self.delhi_model.predict(future_df)
+            prophet_loads = forecast['yhat'].clip(lower=0).tolist()
+        else:
+            prophet_loads = [0] * len(timestamps)
+
+        # Get LightGBM Predictions
+        lgbm_loads = []
+        if self.lgb_model:
+            mean_load = self.base_data['load'].mean() if self.base_data is not None else 4000
             
-        preds = []
-        mean_load = self.base_data['load'].mean() if self.base_data is not None else 4000
-        
-        for ts in timestamps:
-            row = pd.DataFrame({'load': [0]}, index=[ts])
-            row = self._create_features(row)
+            # Vectorized feature creation is harder with loop-based lag filling, 
+            # so we stick to loop but optimize where possible. 
+            # Ideally this should be vectorized.
             
-            # Fill lags with mean (simplified)
+            # Since we are mocking lags for future anyway:
+            # Create a dataframe for all timestamps first
+            df_feats = pd.DataFrame({'load': [0] * len(timestamps)}, index=timestamps)
+            df_feats = self._create_features(df_feats)
+            
+            # Fill lags uniformly for demo
             lags = [1, 2, 3, 6, 12, 24, 288]
             for lag in lags:
-                row[f'lag_{lag}'] = mean_load + np.random.normal(0, 100)
+                df_feats[f'lag_{lag}'] = mean_load + np.random.normal(0, 100, len(timestamps))
                 
             features = self.metadata['feature_cols']
             for col in features:
-                if col not in row.columns:
-                    row[col] = 0
+                if col not in df_feats.columns:
+                    df_feats[col] = 0
             
-            X = row[features].values
-            lgb_pred = self.lgb_model.predict(X)[0]
-            preds.append(max(0, lgb_pred))
-            
-        return pd.DataFrame({'predicted_load': preds}, index=timestamps)
+            X = df_feats[features].values
+            lgbm_loads = self.lgb_model.predict(X).clip(min=0).tolist()
+        else:
+            lgbm_loads = [0] * len(timestamps)
+
+        return pd.DataFrame({
+            'loads_lightgbm': lgbm_loads,
+            'loads_delhi': prophet_loads
+        }, index=timestamps)
 

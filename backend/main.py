@@ -29,22 +29,39 @@ async def startup_event():
 @app.post("/predict", response_model=ForecastResponse)
 async def predict_load(request: ForecastRequest):
     try:
-        # Convert date string to datetime
-        target_date = datetime.strptime(request.target_date, "%Y-%m-%d")
+        # Convert date strings to datetime objects
+        start_date = datetime.strptime(request.start_date, "%Y-%m-%d")
+        end_date = datetime.strptime(request.end_date, "%Y-%m-%d")
         
+        # Validation
+        if end_date < start_date:
+            raise HTTPException(status_code=400, detail="End date must be after start date")
+            
+        if (end_date - start_date).days > 7:
+             raise HTTPException(status_code=400, detail="Maximum forecast range is 7 days")
+
+        # Check if model is loaded
+        # if not model_service.is_loaded():
+        #     raise HTTPException(status_code=503, detail="Models not loaded")
+            
         # Run prediction
-        forecast_df = model_service.predict(target_date, request.horizon_hours, request.model_type)
+        forecast_df = model_service.predict(start_date, end_date)
         
         # Format response
         timestamps = forecast_df.index.strftime("%Y-%m-%d %H:%M").tolist()
-        loads = forecast_df['predicted_load'].tolist()
+        loads_lgb = forecast_df['loads_lightgbm'].tolist()
+        loads_delhi = forecast_df['loads_delhi'].tolist()
+        
+        # Calculate aggregate stats
+        all_loads = loads_lgb + loads_delhi
         
         return ForecastResponse(
             timestamps=timestamps,
-            loads=loads,
-            min_load=min(loads),
-            max_load=max(loads),
-            mean_load=sum(loads) / len(loads)
+            loads_lightgbm=loads_lgb,
+            loads_delhi=loads_delhi,
+            min_load=min(all_loads) if all_loads else 0,
+            max_load=max(all_loads) if all_loads else 0,
+            mean_load=sum(all_loads) / len(all_loads) if all_loads else 0
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
